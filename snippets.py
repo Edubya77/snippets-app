@@ -2,6 +2,10 @@ import logging
 import argparse
 import psycopg2
 
+logging.debug("Connecting to PostgreSQL")
+connection = psycopg2.connect(database="snippets")
+logging.debug("Database connection established.")
+
 # Set the log output file, and the log level
 logging.basicConfig(filename="snippets.log", level=logging.DEBUG)
 
@@ -26,8 +30,19 @@ def get(name):
 
     Returns the snippet.
     """
-    logging.error("FIXME: Unimplemented - get({!r})".format(name))
-    return ""
+    logging.info("Getting snippet {!r}".format(name))
+    cursor = connection.cursor()
+    command = "select message from snippets where keyword=%s"
+    name_tuple = (name,) # turn name into a one item tuple
+    cursor.execute(command, name_tuple)
+    connection.commit()
+    row = cursor.fetchone()
+    if row:
+        logging.debug("Snippet got successfully.")
+        print(row[0])
+        return
+    logging.debug("Snippet '{}' requested, but didn't exist.".format(name))
+    raise IOError("no snippet named '{}'".format(name))
 
 def post(name, snippet):
     """Update a snippet with a given name.
@@ -62,7 +77,7 @@ def main():
     
     # Subparser for the get command
     logging.debug("Constructing get subparser")
-    get_parser = subparsers.add_parser("get", "Retrieve the snippet")
+    get_parser = subparsers.add_parser("get", help="Retrieve the snippet")
     get_parser.add_argument("name", help="Name of the snippet")
 
     arguments = parser.parse_args()
@@ -76,10 +91,6 @@ def main():
     elif command == "get":
         snippet = get(**arguments)
         print("Retrieved snippet: {!r}".format(snippet))
-        
-logging.debug("Connecting to PostgreSQL")
-connection = psycopg2.connect(database="snippets")
-logging.debug("Database connection established.")
 
 if __name__ == "__main__":
     main()
