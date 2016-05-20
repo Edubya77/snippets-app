@@ -1,13 +1,14 @@
 import logging
 import argparse
 import psycopg2
+# Set the log output file, and the log level
+logging.basicConfig(filename="snippets.log", level=logging.DEBUG)
 
+#Connect to database
 logging.debug("Connecting to PostgreSQL")
 connection = psycopg2.connect(database="snippets")
 logging.debug("Database connection established.")
 
-# Set the log output file, and the log level
-logging.basicConfig(filename="snippets.log", level=logging.DEBUG)
 
 def put(name, snippet):
     """
@@ -16,10 +17,19 @@ def put(name, snippet):
     Returns the name and the snippet
     """
     logging.info("Storing snippet {!r}: {!r}".format(name, snippet))
-    cursor = connection.cursor()
-    command = "insert into snippets values (%s, %s)"
-    cursor.execute(command, (name, snippet))
-    connection.commit()
+    with connection, connection.cursor() as cursor:
+        try:
+            command = "insert into snippets values (%s, %s)"
+            cursor.execute(command, (name, snippet))
+        except psycopg2.IntegrityError as error:
+            if error.pgcode == "23505":
+                logging.debug("Updating existing entry {!r}".format(name))
+                connection.rollback()
+                command = "update snippets set message=%s where keyword=%s"
+                cursor.execute(command, (snippet, name))
+            else:
+                raise error
+                
     logging.debug("Snippet stored successfully.")
     return name, snippet
 
@@ -31,18 +41,16 @@ def get(name):
     Returns the snippet.
     """
     logging.info("Getting snippet {!r}".format(name))
-    cursor = connection.cursor()
-    command = "select message from snippets where keyword=%s"
-    name_tuple = (name,) # turn name into a one item tuple
-    cursor.execute(command, name_tuple)
-    connection.commit()
-    row = cursor.fetchone()
-    if row:
-        logging.debug("Snippet got successfully.")
-        print(row[0])
-        return
-    logging.debug("Snippet '{}' requested, but didn't exist.".format(name))
-    raise IOError("no snippet named '{}'".format(name))
+    with connection, connection.cursor() as cursor:
+        cursor.execute("select message from snippets where keyword=%s", (name,))
+        row = cursor.fetchone()
+        if row:
+            logging.debug("Snippet got successfully.")
+            print(row[0])
+            return
+        else:
+            logging.error("Snippet '{}' requested, but didn't exist.".format(name))
+            raise IOError("404: Snippet '%s' not found." % (name))
 
 def post(name, snippet):
     """Update a snippet with a given name.
